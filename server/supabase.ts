@@ -7,7 +7,7 @@ function getSupabaseClient(): SupabaseClient | null {
   if (supabaseClient !== undefined) return supabaseClient;
 
   const url = process.env.SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url && !serviceRoleKey) {
     supabaseClient = null;
@@ -15,7 +15,11 @@ function getSupabaseClient(): SupabaseClient | null {
   }
 
   if (!url || !serviceRoleKey) {
-    throw new Error('Set both SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to enable Supabase persistence.');
+    throw new Error('Set SUPABASE_URL and a server-side SUPABASE_SECRET_KEY to enable Supabase persistence.');
+  }
+
+  if (serviceRoleKey.startsWith('sb_publishable_')) {
+    throw new Error('A Supabase publishable key cannot access the server database. Use a Secret or service_role key.');
   }
 
   supabaseClient = createClient(url, serviceRoleKey, {

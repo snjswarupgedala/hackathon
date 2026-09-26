@@ -18,6 +18,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'studymate_super_secret_jwt_key_2026';
 const COOKIE_NAME = 'studymate_session';
+let startupError: string | null = null;
 
 app.use(cors({
   origin: true,
@@ -26,6 +27,12 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
+app.use('/api', (req, res, next) => {
+  if (startupError) {
+    return res.status(503).json({ error: startupError });
+  }
+  next();
+});
 
 // Rate Limiter for Login Endpoint
 const loginLimiter = rateLimit({
@@ -572,5 +579,8 @@ initializeSupabasePersistence()
   })
   .catch((error) => {
     console.error('Failed to initialize Supabase persistence:', error);
-    process.exitCode = 1;
+    startupError = 'Supabase setup is incomplete. Run supabase/schema.sql and configure a server-side Secret or service_role key.';
+    app.listen(PORT, () => {
+      console.error(`StudyMate AI API is unavailable on port ${PORT} until Supabase setup is fixed.`);
+    });
   });

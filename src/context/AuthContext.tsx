@@ -14,6 +14,18 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+async function readApiResponse(res: Response) {
+  if (!res.headers.get('content-type')?.includes('application/json')) {
+    throw new Error('The API server returned an unexpected response. Check that the backend is running and Supabase is configured.');
+  }
+
+  try {
+    return await res.json();
+  } catch {
+    throw new Error('The API server returned invalid JSON. Check the backend configuration and try again.');
+  }
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
@@ -27,7 +39,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           credentials: 'include'
         });
         if (res.ok) {
-          const data = await res.json();
+          const data = await readApiResponse(res);
           if (data.user) {
             setUser(data.user);
           }
@@ -52,7 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       credentials: 'include'
     });
 
-    const data = await res.json();
+    const data = await readApiResponse(res);
 
     if (!res.ok) {
       throw new Error(data.error || 'Invalid email or password.');
@@ -71,7 +83,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       credentials: 'include'
     });
 
-    const data = await res.json();
+    const data = await readApiResponse(res);
 
     if (!res.ok) {
       throw new Error(data.error || 'Failed to create account.');
@@ -93,7 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         credentials: 'include'
       });
       if (res.ok) {
-        const data = await res.json();
+        const data = await readApiResponse(res);
         if (data.user) {
           setUser(data.user);
           return;
