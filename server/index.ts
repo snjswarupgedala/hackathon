@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import { usersDB, userStoresDB, getUserStore, seedDefaultUser, DBUser, createStarterUserData } from './db.js';
 import { generateStudyPlanAI, summarizeNotesAI, solveDoubtAI, generateQuizAI } from './services/aiService.js';
+import { initializeSupabasePersistence, persistUserState } from './supabase.js';
 
 dotenv.config();
 
@@ -61,10 +62,29 @@ const authMiddleware = (req: any, res: any, next: any) => {
   }
 };
 
+// Persist authenticated writes before returning success to the client.
+app.use('/api', (req: any, res, next) => {
+  const sendJson = res.json.bind(res);
+  res.json = ((body: unknown) => {
+    if (!req.userId || req.method === 'GET') return sendJson(body);
+
+    void persistUserState(req.userId)
+      .then(() => sendJson(body))
+      .catch((error) => {
+        console.error('Failed to persist user data to Supabase:', error);
+        res.status(503);
+        sendJson({ error: 'Your changes could not be saved. Please try again.' });
+      });
+
+    return res;
+  }) as typeof res.json;
+  next();
+});
+
 // ==================== AUTH ROUTES ====================
 
 // 1. User Registration (Sign Up)
-app.post('/api/auth/signup', (req, res) => {
+app.post('/api/auth/signup', async (req, res) => {
   const { name, email, password, college, degree, branch, year, semester } = req.body;
 
   if (!email || typeof email !== 'string') {
@@ -114,6 +134,15 @@ app.post('/api/auth/signup', (req, res) => {
 
   usersDB.set(userId, newUser);
   userStoresDB.set(userId, createStarterUserData());
+
+  try {
+    await persistUserState(userId);
+  } catch (error) {
+    usersDB.delete(userId);
+    userStoresDB.delete(userId);
+    console.error('Failed to persist new user to Supabase:', error);
+    return res.status(503).json({ error: 'Your account could not be saved. Please try again.' });
+  }
 
   // Issue JWT Cookie
   const token = jwt.sign({ userId }, JWT_SECRET, { expiresIn: '7d' });
@@ -534,6 +563,14 @@ app.post('/api/placement/resume', authMiddleware, (req: any, res) => {
   res.json({ success: true, resume: store.placement.resume });
 });
 
-app.listen(PORT, () => {
-  console.log(`StudyMate AI Server running securely on port ${PORT}`);
-});
+initializeSupabasePersistence()
+  .then((supabaseEnabled) => {
+    console.log(supabaseEnabled ? 'Supabase persistence enabled.' : 'Supabase not configured; using in-memory data.');
+    app.listen(PORT, () => {
+      console.log(`StudyMate AI Server running securely on port ${PORT}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Failed to initialize Supabase persistence:', error);
+    process.exitCode = 1;
+  });
